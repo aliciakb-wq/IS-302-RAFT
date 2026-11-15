@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RAFT Front Desk</title>
+<style>
+:root{--bg:#f1f5f6;--panel:#fff;--ink:#16262b;--mute:#5b6e73;--line:#d3dde0;--acc:#1d6a73;--acc-ink:#fff;--warn:#a3341f;--ok:#1f6b3a;--tag:#e8b94a;--tag-ink:#2a2208}
+@media(prefers-color-scheme:dark){:root{--bg:#101a1d;--panel:#172429;--ink:#e6eff1;--mute:#93a9ae;--line:#2b3d43;--acc:#4fb3bf;--acc-ink:#07191c;--warn:#ff8f78;--ok:#6fd194}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+h1,h2,h3{font-family:Georgia,"Times New Roman",serif;font-weight:600;line-height:1.2;margin:0 0 .6rem}
+h1{font-size:1.9rem}h2{font-size:1.25rem;margin-top:1.8rem}
+a{color:var(--acc)}
+[hidden]{display:none!important}
+header{background:var(--panel);border-bottom:1px solid var(--line);padding:.6rem 1rem;display:flex;flex-wrap:wrap;gap:.5rem 1.2rem;align-items:center;position:sticky;top:0}
+header b{font-family:Georgia,serif;font-size:1.15rem;margin-right:.4rem}
+nav{display:flex;flex-wrap:wrap;gap:.2rem}
+nav a{padding:.35rem .7rem;border-radius:6px;text-decoration:none;color:var(--ink)}
+nav a.on{background:var(--acc);color:var(--acc-ink)}
+.who{margin-left:auto;display:flex;gap:.6rem;align-items:center;font-size:.9rem;color:var(--mute)}
+.role{background:var(--tag);color:var(--tag-ink);font-weight:600;padding:.1rem .6rem;border-radius:99px}
+main{max-width:980px;margin:0 auto;padding:1.5rem 1rem 4rem}
+button,.btn{font:inherit;background:var(--acc);color:var(--acc-ink);border:0;border-radius:6px;padding:.5rem 1rem;cursor:pointer;text-decoration:none;display:inline-block}
+button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid var(--tag);outline-offset:1px}
+input,select,textarea{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:.45rem .6rem;width:100%}
+label{display:block;font-size:.88rem;color:var(--mute)}
+label input,label select,label textarea{margin-top:.2rem;color:var(--ink)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:.8rem}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:1rem}
+a.tile{display:block;text-decoration:none;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-left:6px solid var(--acc);border-radius:10px;padding:1rem}
+a.tile strong{display:block;font-family:Georgia,serif;font-size:1.15rem}
+a.tile span{color:var(--mute);font-size:.92rem}
+.bar{display:flex;flex-wrap:wrap;gap:.6rem;align-items:end;margin-bottom:1rem}
+.bar>*{flex:1 1 160px}.bar>button{flex:0 0 auto}
+.err{color:var(--warn)}.ok{color:var(--ok)}.mute{color:var(--mute)}
+table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+th,td{text-align:left;padding:.5rem .7rem;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:.85rem;color:var(--mute);font-weight:600}
+.scroll{overflow-x:auto}
+.stat{font-family:Georgia,serif;font-size:2.1rem;line-height:1.1}
+.row{display:grid;grid-template-columns:140px 1fr 40px;gap:.6rem;align-items:center;margin:.3rem 0}
+.row i{display:block;height:12px;background:var(--acc);border-radius:3px}
+.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.8rem}
+.form .wide{grid-column:1/-1}
+#signin{max-width:380px;margin:12vh auto;padding:0 1rem}
+#signin form{display:grid;gap:.9rem}
+</style>
+</head>
+<body>
+
+<div id="signin" hidden>
+  <h1>Richmond Area Family Therapy</h1>
+  <p class="mute">Front desk sign-in</p>
+  <form id="sform" class="panel">
+    <label>Email<input type="email" name="email" autocomplete="username" required></label>
+    <label>Password<input type="password" name="password" autocomplete="current-password" required></label>
+    <button type="submit">Sign in</button>
+    <div id="serr" class="err" role="alert"></div>
+  </form>
+</div>
+
+<div id="app" hidden>
+  <header>
+    <b>RAFT</b>
+    <nav id="nav">
+      <a href="#home" data-s="home">Home</a>
+      <a href="#lookup" data-s="lookup">Client lookup</a>
+      <a href="#dashboard" data-s="dashboard">Dashboard</a>
+      <a href="#edit" data-s="edit">Add or edit a record</a>
+    </nav>
+    <div class="who"><span id="email"></span><span class="role" id="role"></span><button class="ghost" id="out">Sign out</button></div>
+  </header>
+  <main id="view"></main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script>
+const sb = supabase.createClient('https://keunoljsaoukpmaqpowz.supabase.co','sb_publishable_WNw37p2sR1yP--F_WwEhOg_REZ3-ccH',{db:{schema:'raft'}});
+const $ = s => document.querySelector(s), view = $('#view');
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const ROLES = {raft_admin:'Admin', raft_scheduler:'Scheduler', raft_counselor:'Counselor'};
+const PCOLS = 'firstname,lastname,address,city,state,zip,phone,email';
+let role = null, userEmail = '', pending = null, ed = null, openClient = null;
+const isA = () => role==='raft_admin', isS = () => role==='raft_scheduler', isC = () => role==='raft_counselor';
+const seeNotes = () => !isS();      // appointment.notes and scheduledfor.assignment
+const editBase = () => !isC();      // people, clients, appointment basics
+const editKept = () => !isS();      // scheduledfor.kept / assignment
+const nn = v => (v === '' || v == null) ? null : v;
+const one = x => Array.isArray(x) ? x[0] : x;
+const nm = p => p ? `${p.firstname||''} ${p.lastname||''}`.trim() : '';
+const when = t => t ? String(t).replace('T',' ').slice(0,16) : '';
+const pad = n => String(n).padStart(2,'0');
+const dstr = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const chk = r => { if (r.error) throw r.error; return r.data; };
+const fail = e => `<p class="err" role="alert">${esc(e.message || e)}</p>`;
+
+async function all(table, cols, f){
+  let out = [], from = 0;
+  for(;;){
+    let q = sb.from(table).select(cols).range(from, from+999);
+    if (f) q = f(q);
+    const d = chk(await q); out = out.concat(d);
+    if (d.length < 1000) return out; from += 1000;
+  }
+}
+const roomMap = async () => Object.fromEntries((await all('room','roomnumber,roomname')).map(r => [r.roomnumber, r.roomname]));
+const nameMap = async ids => {
+  ids = [...new Set(ids)]; if (!ids.length) return {};
+  const d = chk(await sb.from('person').select('personid,firstname,lastname').in('personid', ids));
+  return Object.fromEntries(d.map(p => [p.personid, nm(p)]));
+};
+
+/* ---------- auth ---------- */
+function roleOf(s){
+  try{ let p = s.access_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/');
+       return JSON.parse(atob(p + '='.repeat((4 - p.length % 4) % 4))).role; }catch{ return null; }
+}
+function showSignin(msg){
+  role = null; ed = null; pending = null; view.innerHTML = '';
+  $('#app').hidden = true; $('#signin').hidden = false; $('#serr').textContent = msg || '';
+}
+async function start(session){
+  role = roleOf(session);
+  if (!ROLES[role]){ await sb.auth.signOut(); return showSignin('This account has no RAFT staff role. Ask an administrator to set it up.'); }
+  userEmail = session.user.email;
+  $('#email').textContent = userEmail; $('#role').textContent = ROLES[role];
+  $('#signin').hidden = true; $('#app').hidden = false;
+  route();
+}
+$('#sform').addEventListener('submit', async e => {
+  e.preventDefault();
+  const f = new FormData(e.target); $('#serr').textContent = '';
+  const {data, error} = await sb.auth.signInWithPassword({email:f.get('email'), password:f.get('password')});
+  if (error) return $('#serr').textContent = /invalid/i.test(error.message) ? 'The email or password is wrong. Check both and try again.' : error.message;
+  e.target.reset(); start(data.session);
+});
+$('#out').addEventListener('click', async () => { await sb.auth.signOut(); location.hash = ''; showSignin(); });
+(async () => {
+  const {data} = await sb.auth.getSession();
+  data.session ? start(data.session) : showSignin();
+})();
+
+/* ---------- routing ---------- */
+const screens = {home, lookup, dashboard, edit};
+async function route(){
+  if (!role) return;
+  const s = screens[location.hash.slice(1)] ? location.hash.slice(1) : 'home';
+  document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('on', a.dataset.s === s));
+  view.innerHTML = '<p class="mute">Loading…</p>';
+  try{ await screens[s](); }catch(e){ view.innerHTML = fail(e); }
+}
+window.addEventListener('hashchange', route);
+function go(kind, id){ pending = {kind, id}; if (location.hash === '#edit') route(); else location.hash = 'edit'; }
+
+/* ---------- home ---------- */
+async function home(){
+  const may = isA() ? 'You can see and change everything.' : isS() ? 'You can see and change people, clients, rooms and appointments.' : 'You can see appointments and clients, and update notes, assignments and attendance.';
+  view.innerHTML = `<h1>Welcome</h1><p>Signed in as ${esc(userEmail)} (${ROLES[role]}). ${may}</p>
+  <div class="grid">
+    <a class="tile" href="#lookup"><strong>Client lookup</strong><span>Contact details, appointments and families</span></a>
+    <a class="tile" href="#dashboard"><strong>Dashboard</strong><span>Key statistics for RAFT</span></a>
+    <a class="tile" href="#edit"><strong>Add or edit a record</strong><span>${isC() ? 'Update appointment notes and attendance' : 'New or changed clients and appointments'}</span></a>
+  </div><h2>Today's appointments</h2><div id="today"></div>`;
+  const d = new Date(), n = new Date(d.getTime() + 864e5);
+  const [ap, rooms] = await Promise.all([
+    all('appointment','appointmentid,appointmenttime,duration,roomnumber', q => q.gte('appointmenttime', dstr(d)+'T00:00:00').lt('appointmenttime', dstr(n)+'T00:00:00').order('appointmenttime')),
+    roomMap()]);
+  $('#today').innerHTML = ap.length ? `<div class="scroll"><table><tr><th>Time</th><th>Length</th><th>Room</th><th></th></tr>${ap.map(a => `<tr><td>${esc(when(a.appointmenttime).slice(11))}</td><td>${esc(a.duration)} min</td><td>${esc(rooms[a.roomnumber] ?? a.roomnumber)}</td><td><button class="ghost" onclick="go('appointment',${a.appointmentid})">Open</button></td></tr>`).join('')}</table></div>` : '<p class="mute">No appointments are scheduled for today.</p>';
+}
+
+/* ---------- client lookup ---------- */
+async function lookup(){
+  view.innerHTML = `<h1>Client lookup</h1>
+  <form id="lf" class="bar"><label>Name, email, phone or client ID<input id="lq" type="search" value="" autofocus></label><button>Search</button></form>
+  <div id="lres"></div><div id="ldet"></div>`;
+  $('#lf').addEventListener('submit', async e => { e.preventDefault(); search($('#lq').value); });
+  if (openClient){ const id = openClient; openClient = null; showClient(id); } else search('');
+}
+async function search(term){
+  const t = term.trim().replace(/[,()%*\\]/g,' ').replace(/\s+/g,' ').trim();
+  let q = sb.from('client').select(`clientid,person!inner(${PCOLS})`).order('clientid').limit(25);
+  if (/^\d+$/.test(t)) q = q.eq('clientid', +t);
+  else if (t){
+    let f = ['firstname','lastname','email','phone'].map(c => `${c}.ilike.*${t}*`);
+    const w = t.split(' '); if (w.length === 2) f.push(`and(firstname.ilike.*${w[0]}*,lastname.ilike.*${w[1]}*)`);
+    q = q.or(f.join(','), {referencedTable:'person'});
+  }
+  const {data, error} = await q;
+  if (error) return $('#lres').innerHTML = fail(error);
+  $('#ldet').innerHTML = '';
+  $('#lres').innerHTML = data.length ? `<div class="scroll"><table><tr><th>Client</th><th>ID</th><th>Phone</th><th>Email</th><th></th></tr>${data.map(c => { const p = one(c.person); return `<tr><td>${esc(nm(p))}</td><td>${c.clientid}</td><td>${esc(p.phone)}</td><td>${esc(p.email)}</td><td><button onclick="showClient(${c.clientid})">View</button></td></tr>`; }).join('')}</table></div>${data.length===25?'<p class="mute">Showing the first 25 matches. Narrow your search to see others.</p>':''}` : '<p class="mute">No clients match that search.</p>';
+}
+async function showClient(id){
+  const box = $('#ldet'); box.innerHTML = '<p class="mute">Loading…</p>';
+  $('#ldet').scrollIntoView({behavior:'smooth'});
+  const nc = seeNotes();
+  const [cl, sf, fam, rl, rooms] = await Promise.all([
+    sb.from('client').select(`clientid,foundout,remindermethod,referredby,person!inner(${PCOLS})`).eq('clientid', id).maybeSingle(),
+    sb.from('scheduledfor').select(`appointmentid,kept${nc?',assignment':''},appointment(appointmenttime,duration,roomnumber,counselorid${nc?',notes':''})`).eq('clientid', id),
+    sb.from('member_in_family').select('familyid,datejoined,family(familyname)').eq('memberid', id),
+    sb.from('member_role').select('familyid,role(rolename)').eq('memberid', id),
+    roomMap().then(d => ({data:d})).catch(error => ({error}))]);
+  if (cl.error) return box.innerHTML = fail(cl.error);
+  if (!cl.data) return box.innerHTML = '<p class="mute">No client with that ID.</p>';
+  const c = cl.data, p = one(c.person);
+  let h = `<h2>${esc(nm(p))} <span class="mute">(client ${c.clientid})</span></h2><div class="panel"><div class="grid">
+   <div>Phone<br><b>${esc(p.phone)||'—'}</b></div><div>Email<br><b>${esc(p.email)||'—'}</b></div>
+   <div>Address<br><b>${esc([p.address,p.city,[p.state,p.zip].filter(Boolean).join(' ')].filter(Boolean).join(', '))||'—'}</b></div>
+   <div>Reminder method<br><b>${esc(c.remindermethod)||'—'}</b></div><div>Found out via<br><b>${esc(c.foundout)||'—'}</b></div>
+   <div>Referred by client<br><b>${c.referredby ?? '—'}</b></div></div>
+   ${editBase() ? `<p><button class="ghost" onclick="go('client',${c.clientid})">Edit this client</button></p>` : ''}</div>`;
+  h += '<h2>Appointments</h2>';
+  if (sf.error) h += fail(sf.error);
+  else if (!sf.data.length) h += '<p class="mute">This client has no appointments.</p>';
+  else {
+    const rows = sf.data.map(r => ({...r, a: one(r.appointment)})).sort((x,y) => String(y.a?.appointmenttime).localeCompare(String(x.a?.appointmenttime)));
+    const names = await nameMap(rows.map(r => r.a?.counselorid)).catch(() => ({}));
+    const rm = rooms.data || {};
+    h += `<div class="scroll"><table><tr><th>When</th><th>Length</th><th>Room</th><th>Counselor</th><th>Kept</th>${nc?'<th>Assignment</th><th>Notes</th>':''}<th></th></tr>${rows.map(r => `<tr><td>${esc(when(r.a?.appointmenttime))}</td><td>${esc(r.a?.duration)} min</td><td>${esc(rm[r.a?.roomnumber] ?? r.a?.roomnumber)}</td><td>${esc(names[r.a?.counselorid]||'')}</td><td>${r.kept==null?'—':r.kept?'Yes':'No'}</td>${nc?`<td>${esc(r.assignment)}</td><td>${esc(r.a?.notes)}</td>`:''}<td><button class="ghost" onclick="go('appointment',${r.appointmentid})">Edit</button></td></tr>`).join('')}</table></div>`;
+  }
+  h += '<h2>Families and roles</h2>';
+  if (fam.error) h += fail(fam.error);
+  else if (!fam.data.length) h += '<p class="mute">This client does not belong to a family.</p>';
+  else h += `<div class="scroll"><table><tr><th>Family</th><th>Roles</th><th>Joined</th></tr>${fam.data.map(f => `<tr><td>${esc(one(f.family)?.familyname)}</td><td>${rl.error ? esc(rl.error.message) : esc((rl.data||[]).filter(r => r.familyid===f.familyid).map(r => one(r.role)?.rolename).join(', ')) || '—'}</td><td>${esc(f.datejoined)}</td></tr>`).join('')}</table></div>`;
+  box.innerHTML = h;
+}
+
+/* ---------- dashboard ---------- */
+const bars = m => { const e = Object.entries(m).sort((a,b) => b[1]-a[1]), mx = Math.max(1, ...e.map(x => x[1]));
+  return e.length ? e.map(([k,v]) => `<div class="row"><span>${esc(k)}</span><i style="width:${v/mx*100}%"></i><b>${v}</b></div>`).join('') : '<p class="mute">No data.</p>'; };
+async function dashboard(){
+  const cnt = async t => { const r = await sb.from(t).select(t==='client'?'clientid':'familyid',{count:'exact',head:true}); return chk(r) , r.count; };
+  const [nC, nF, ap, sf, cl, rooms, cons] = await Promise.all([cnt('client'), cnt('family'),
+    all('appointment','appointmentid,appointmenttime,duration,counselorid,roomnumber'), all('scheduledfor','kept'), all('client','foundout'),
+    roomMap(), all('counselor','counselorid,person(firstname,lastname)')]);
+  const now = new Date(), ns = `${dstr(now)}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  const up = ap.filter(a => String(a.appointmenttime) >= ns).length;
+  const dec = sf.filter(s => s.kept != null), kept = dec.filter(s => s.kept).length;
+  const avg = ap.length ? Math.round(ap.reduce((s,a) => s + (a.duration||0), 0) / ap.length) : 0;
+  const cn = Object.fromEntries(cons.map(c => [c.counselorid, nm(one(c.person))]));
+  const byRoom = {}, byCons = {}, byFound = {};
+  ap.forEach(a => { const r = rooms[a.roomnumber] ?? a.roomnumber; byRoom[r] = (byRoom[r]||0)+1; const c = cn[a.counselorid] ?? a.counselorid; byCons[c] = (byCons[c]||0)+1; });
+  cl.forEach(c => { const f = c.foundout || 'Not recorded'; byFound[f] = (byFound[f]||0)+1; });
+  const tile = (n,l) => `<div class="panel"><div class="stat">${n}</div>${l}</div>`;
+  let wage = '';
+  if (isA()){ try{ const w = await all('employee','wage'); const v = w.filter(x => x.wage != null);
+    wage = tile(v.length ? '$' + (v.reduce((s,x) => s + +x.wage, 0) / v.length).toFixed(2) : '—', 'Average employee wage'); }catch(e){ wage = `<div class="panel">${fail(e)}</div>`; } }
+  view.innerHTML = `<h1>Dashboard</h1><div class="grid">
+   ${tile(nC,'Clients')}${tile(nF,'Families')}${tile(ap.length,'Appointments in total')}${tile(up,'Upcoming appointments')}
+   ${tile(avg+' min','Average appointment length')}${tile(dec.length ? Math.round(kept/dec.length*100)+'%' : '—','Appointments kept (of those marked)')}${wage}</div>
+   <h2>Appointments by room</h2><div class="panel">${bars(byRoom)}</div>
+   <h2>Appointments by counselor</h2><div class="panel">${bars(byCons)}</div>
+   <h2>How clients found RAFT</h2><div class="panel">${bars(byFound)}</div>`;
+}
+
+/* ---------- add or edit ---------- */
+const fld = (l, n, v, a='') => `<label>${l}<input name="${n}" value="${esc(v)}" ${a}></label>`;
+async function edit(){
+  if (pending){ ed = pending; pending = null; }
+  else if (!ed) ed = {kind: isC() ? 'appointment' : 'client', id: null};
+  view.innerHTML = `<h1>Add or edit a record</h1>${isC() ? '<p class="mute">Counselors can update appointment notes, assignments and attendance. Nothing else can be changed from this role.</p>' : ''}
+  <div class="bar"><label>Record type<select id="kind">${isC() ? '' : `<option value="client" ${ed.kind==='client'?'selected':''}>Client</option>`}<option value="appointment" ${ed.kind==='appointment'?'selected':''}>Appointment</option></select></label>
+  <label>ID to edit<input id="eid" type="number" min="1" value="${ed.id ?? ''}"></label><button id="loadb">Load</button>${isC() ? '' : '<button id="newb" class="ghost">New</button>'}</div><div id="form"></div>`;
+  $('#kind').onchange = e => { ed = {kind:e.target.value, id:null}; edit(); };
+  $('#loadb').onclick = () => { ed.id = +$('#eid').value || null; edit(); };
+  if ($('#newb')) $('#newb').onclick = () => { ed.id = null; edit(); };
+  try{ await (ed.kind === 'client' ? clientForm() : apptForm()); }catch(e){ $('#form').innerHTML = fail(e); }
+}
+const status = (m, bad) => $('#msg').innerHTML = `<span class="${bad?'err':'ok'}" role="status">${esc(m)}</span>`;
+
+async function clientForm(){
+  if (isC()) return;
+  let c = {}, p = {};
+  if (ed.id){
+    const r = chk(await sb.from('client').select(`clientid,foundout,remindermethod,referredby,person!inner(${PCOLS})`).eq('clientid', ed.id).maybeSingle());
+    if (!r) return $('#form').innerHTML = '<p class="mute">No client with that ID.</p>';
+    c = r; p = one(r.person);
+  }
+  $('#form').innerHTML = `<h2>${ed.id ? 'Edit client ' + ed.id : 'New client'}</h2><form id="f" class="form panel">
+   ${fld('First name','firstname',p.firstname,'required')}${fld('Last name','lastname',p.lastname,'required')}
+   ${fld('Address','address',p.address,'maxlength=50')}${fld('City','city',p.city,'maxlength=50')}
+   ${fld('State (2 letters)','state',p.state,'maxlength=2')}${fld('ZIP','zip',p.zip,'maxlength=10')}
+   ${fld('Phone','phone',p.phone,'maxlength=14')}${fld('Email','email',p.email,'type=email')}
+   ${fld('How they found RAFT','foundout',c.foundout,'maxlength=50')}${fld('Reminder method','remindermethod',c.remindermethod,'maxlength=50')}
+   ${fld('Referred by (client ID)','referredby',c.referredby,'type=number min=1')}
+   <div class="wide"><button>${ed.id ? 'Save changes' : 'Add client'}</button> <span id="msg"></span></div></form>`;
+  $('#f').onsubmit = async e => {
+    e.preventDefault();
+    const d = Object.fromEntries(new FormData(e.target)), P = {};
+    PCOLS.split(',').forEach(k => P[k] = nn(d[k]?.trim()));
+    if (P.state) P.state = P.state.toUpperCase();
+    const C = {foundout:nn(d.foundout), remindermethod:nn(d.remindermethod), referredby: d.referredby === '' ? null : +d.referredby};
+    try{
+      if (ed.id){ chk(await sb.from('person').update(P).eq('personid', ed.id)); chk(await sb.from('client').update(C).eq('clientid', ed.id)); status('Changes saved.'); }
+      else {
+        const pr = chk(await sb.from('person').insert(P).select('personid').single());
+        const r = await sb.from('client').insert({clientid: pr.personid, ...C});
+        if (r.error) throw new Error(`The person was saved as ID ${pr.personid} but the client record failed: ${r.error.message}`);
+        ed.id = pr.personid; openClient = pr.personid; location.hash = 'lookup';
+      }
+    }catch(er){ status(er.message, true); }
+  };
+}
+
+async function apptForm(){
+  let a = {}, att = [];
+  const nc = seeNotes();
+  const [rooms, cons, emps] = await Promise.all([all('room','roomnumber,roomname'), all('counselor','counselorid,person(firstname,lastname)'), all('employee','employeeid,person(firstname,lastname)')]);
+  if (ed.id){
+    a = chk(await sb.from('appointment').select(`appointmentid,appointmenttime,duration,counselorid,employeeid,roomnumber${nc?',notes':''}`).eq('appointmentid', ed.id).maybeSingle());
+    if (!a) return $('#form').innerHTML = '<p class="mute">No appointment with that ID.</p>';
+    att = chk(await sb.from('scheduledfor').select(`clientid,kept${nc?',assignment':''},client(person(firstname,lastname))`).eq('appointmentid', ed.id));
+  }
+  const opt = (arr, idk, lab, sel) => arr.map(x => `<option value="${x[idk]}" ${x[idk]==sel?'selected':''}>${esc(lab(x))}</option>`).join('');
+  const base = editBase() ? `
+   <label>Date and time<input name="appointmenttime" type="datetime-local" value="${esc(String(a.appointmenttime||'').slice(0,16))}" required></label>
+   <label>Length (minutes)<input name="duration" type="number" min="1" value="${esc(a.duration ?? 50)}" required></label>
+   <label>Counselor<select name="counselorid">${opt(cons,'counselorid',x=>nm(one(x.person)),a.counselorid)}</select></label>
+   <label>Scheduled by (employee)<select name="employeeid">${opt(emps,'employeeid',x=>nm(one(x.person)),a.employeeid)}</select></label>
+   <label>Room<select name="roomnumber">${opt(rooms,'roomnumber',x=>x.roomname,a.roomnumber)}</select></label>` : '';
+  const rm = Object.fromEntries(rooms.map(r => [r.roomnumber, r.roomname]));
+  const sum = !editBase() && ed.id ? `<p class="wide"><b>${esc(when(a.appointmenttime))}</b>, ${esc(a.duration)} min, ${esc(rm[a.roomnumber]||'')}</p>` : '';
+  if (isC() && !ed.id) return $('#form').innerHTML = '<p class="mute">Enter an appointment ID above, or open one from Client lookup.</p>';
+  const notes = nc ? `<label class="wide">Notes<textarea name="notes" rows="4" maxlength="3000">${esc(a.notes)}</textarea></label>` : '';
+  const addc = editBase() ? `<label class="wide">${ed.id ? 'Add a client to this appointment' : 'Client for this appointment (client ID)'}<input name="newclient" type="number" min="1"></label>` : '';
+  const attHtml = ed.id ? `<h3 class="wide">Clients</h3>${att.length ? `<div class="scroll wide"><table><tr><th>Client</th><th>Kept</th>${nc?'<th>Assignment</th>':''}</tr>${att.map(s => `<tr><td>${esc(nm(one(one(s.client)?.person)))} <span class="mute">(${s.clientid})</span></td><td>${editKept() ? `<input type="checkbox" data-k="${s.clientid}" ${s.kept?'checked':''} style="width:auto">` : (s.kept==null?'—':s.kept?'Yes':'No')}</td>${nc?`<td><textarea data-a="${s.clientid}" rows="2" maxlength="2000">${esc(s.assignment)}</textarea></td>`:''}</tr>`).join('')}</table></div>` : '<p class="mute wide">No clients are scheduled yet.</p>'}` : '';
+  $('#form').innerHTML = `<h2>${ed.id ? 'Edit appointment ' + ed.id : 'New appointment'}</h2><form id="f" class="form panel">${sum}${base}${notes}${addc}${attHtml}
+   <div class="wide"><button>${ed.id ? 'Save changes' : 'Add appointment'}</button> <span id="msg"></span></div></form>`;
+  $('#f').onsubmit = async e => {
+    e.preventDefault();
+    const d = Object.fromEntries(new FormData(e.target));
+    try{
+      let id = ed.id;
+      const row = {};
+      if (editBase()) Object.assign(row, {appointmenttime:d.appointmenttime, duration:+d.duration, counselorid:+d.counselorid, employeeid:+d.employeeid, roomnumber:+d.roomnumber});
+      if (nc) row.notes = nn(d.notes);
+      if (id) chk(await sb.from('appointment').update(row).eq('appointmentid', id));
+      else id = chk(await sb.from('appointment').insert(row).select('appointmentid').single()).appointmentid;
+      if (editKept() && ed.id) for (const s of att){
+        const u = {kept: document.querySelector(`[data-k="${s.clientid}"]`).checked};
+        if (nc) u.assignment = nn(document.querySelector(`[data-a="${s.clientid}"]`).value);
+        chk(await sb.from('scheduledfor').update(u).eq('appointmentid', id).eq('clientid', s.clientid));
+      }
+      if (editBase() && d.newclient){
+        const r = await sb.from('scheduledfor').insert({appointmentid:id, clientid:+d.newclient});
+        if (r.error){ ed.id = id; await apptForm(); return status(`Appointment ${id} was saved, but the client could not be added: ${r.error.message}`, true); }
+      }
+      ed.id = id; $('#eid').value = id; await apptForm(); status(`Appointment ${id} saved.`);
+    }catch(er){ status(er.message, true); }
+  };
+}
+</script>
+</body>
+</html>
