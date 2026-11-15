@@ -246,7 +246,8 @@ async function dashboard(){
   const tile = (n,l) => `<div class="panel"><div class="stat">${n}</div>${l}</div>`;
   let wage = '';
   if (isA()){ try{ const w = await all('employee','wage'); const v = w.filter(x => x.wage != null);
-    wage = tile(v.length ? '$' + (v.reduce((s,x) => s + +x.wage, 0) / v.length).toFixed(2) : '—', 'Average employee wage'); }catch(e){ wage = `<div class="panel">${fail(e)}</div>`; } }
+    wage = tile(v.length ? '$' + (v.reduce((s,x) => s + +x.wage, 0) / v.length).toFixed(2) : '—', 'Average employee wage')
+         + tile(v.length ? '$' + Math.max(...v.map(x => +x.wage)).toFixed(2) : '—', 'Maximum employee wage'); }catch(e){ wage = `<div class="panel">${fail(e)}</div>`; } }
   view.innerHTML = `<h1>Dashboard</h1><div class="grid">
    ${tile(nC,'Clients')}${tile(nF,'Families')}${tile(ap.length,'Appointments in total')}${tile(up,'Upcoming appointments')}
    ${tile(avg+' min','Average appointment length')}${tile(dec.length ? Math.round(kept/dec.length*100)+'%' : '—','Appointments kept (of those marked)')}${wage}</div>
